@@ -93,11 +93,12 @@ skill_cols = st.columns(3)
 for i, (skill, desc) in enumerate(skills_info.items()):
     with skill_cols[i % 3]:
         if skill == "Àrsaidh Technology":
-            val = st.slider(skill, -5, 15, -5, key=f"skill_{skill}", help=desc)
+            val = st.slider(skill, -5, 10, -5, key=f"skill_{skill}", help=desc)
         else:
-            val = st.slider(skill, 0, 15, 0, key=f"skill_{skill}", help=desc)
+            val = st.slider(skill, 0, 10, 0, key=f"skill_{skill}", help=desc)
         skills[skill] = val
-        total_skill_points += val if val > 0 else 0  # negative start excluded from total
+        # Negative starting point does not count against the total
+        total_skill_points += max(val, 0)
 
 if total_skill_points > 70:
     st.error(f"⚠️ Total exceeds 70! Currently: {total_skill_points}")
@@ -193,4 +194,5 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
+
 
