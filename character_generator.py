@@ -58,7 +58,7 @@ total_points = 0
 
 for i, label in enumerate(attribute_info.keys()):
     with attr_cols[i]:
-        val = st.slider(label, 1, 10, 3, key=f"attr_{label}", help=attribute_info[label])
+        val = st.slider(label, 0, 18, 0, key=f"attr_{label}", help=attribute_info[label])
         attrs[label] = val
         total_points += val
 
@@ -66,15 +66,6 @@ if total_points > max_total:
     st.error(f"⚠️ Total exceeds {max_total}! Currently: {total_points}")
 else:
     st.info(f"Attribute points used: {total_points}/{max_total}")
-
-# ---------- SECONDARY ATTRIBUTES ----------
-with st.expander("📘 Secondary Attributes (Rulebook Page 5)"):
-    st.markdown("""
-**Luck:** Sometimes, no matter how things seem to be going, fate intervenes and changes everything. A character may spend 1 Luck to re-roll any damage roll or failed check, or spend ALL their Luck to completely negate a killing blow.  
-**Stamina:** A character can only do so much each round. Stamina points are spent to take combat actions, with different costs for different actions. Stamina fully regenerates at the beginning of each round. Characters start with **10 Stamina points**.  
-**Stress:** Divers must be especially resilient to pressure, but they’re only human. Many situations will cause a character to gain Stress. Characters begin their careers with **0 Stress**.  
-**Wounds:** There is only so much punishment the human body can take before it gives up. Most characters can only sustain **3 Wounds** before dying.
-""")
 
 # ---------- SKILLS ----------
 st.subheader("Skills (Rulebook Pages 6–7)")
@@ -98,11 +89,15 @@ skills_info = {
 skills = {}
 total_skill_points = 0
 skill_cols = st.columns(3)
+
 for i, (skill, desc) in enumerate(skills_info.items()):
     with skill_cols[i % 3]:
-        val = st.slider(skill, 0, 15, 5, key=f"skill_{skill}", help=desc)
+        if skill == "Àrsaidh Technology":
+            val = st.slider(skill, -5, 15, -5, key=f"skill_{skill}", help=desc)
+        else:
+            val = st.slider(skill, 0, 15, 0, key=f"skill_{skill}", help=desc)
         skills[skill] = val
-        total_skill_points += val
+        total_skill_points += val if val > 0 else 0  # negative start excluded from total
 
 if total_skill_points > 70:
     st.error(f"⚠️ Total exceeds 70! Currently: {total_skill_points}")
@@ -198,3 +193,4 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
+
