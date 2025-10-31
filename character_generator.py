@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
+import re
 from PyPDF2 import PdfReader, PdfWriter
 from io import BytesIO
 
@@ -67,6 +68,15 @@ if total_points > max_total:
 else:
     st.info(f"Attribute points used: {total_points}/{max_total}")
 
+# ---------- SECONDARY ATTRIBUTES ----------
+with st.expander("📘 Secondary Attributes (Rulebook Page 5)"):
+    st.markdown("""
+**Luck:** Sometimes, no matter how things seem to be going, fate intervenes and changes everything. A character may spend 1 Luck to re-roll any damage roll or failed check, or spend ALL their Luck to completely negate a killing blow.  
+**Stamina:** A character can only do so much each round. Stamina points are spent to take combat actions, with different costs for different actions. Stamina fully regenerates at the beginning of each round. Characters start with **10 Stamina points**.  
+**Stress:** Divers must be especially resilient to pressure, but they’re only human. Many situations will cause a character to gain Stress. Characters begin their careers with **0 Stress**.  
+**Wounds:** There is only so much punishment the human body can take before it gives up. Most characters can only sustain **3 Wounds** before dying.
+""")
+
 # ---------- SKILLS ----------
 st.subheader("Skills (Rulebook Pages 6–7)")
 st.caption("Distribute 70 points among the following skills (no more than 10 on one skill). Skills represent prowess in a determined field. Roll a D20 + skill value to test; a 20 or higher succeeds.")
@@ -97,7 +107,6 @@ for i, (skill, desc) in enumerate(skills_info.items()):
         else:
             val = st.slider(skill, 0, 10, 0, key=f"skill_{skill}", help=desc)
         skills[skill] = val
-        # Negative starting point does not count against the total
         total_skill_points += max(val, 0)
 
 if total_skill_points > 70:
@@ -150,6 +159,20 @@ if st.button("📜 Generate Character Sheet"):
     tic = random_row(tics)
     coin = random_row(coins)
 
+    # Background Skill Choice (auto-detect from text)
+    bg_bonus_choice = None
+    if bg is not None and "Choose:" in bg["background"]:
+        match = re.search(r"Choose:\s*\+1\s*(.*?)\s*or\s*\+1\s*(.*?)(?:\.|$)", bg["background"])
+        if match:
+            option1, option2 = match.groups()
+            st.markdown(f"**Background Skill Choice:** You may add +1 to either `{option1}` or `{option2}`.")
+            bg_bonus_choice = st.radio("Select your +1 Skill Bonus", [option1.strip(), option2.strip()])
+            if st.button("Apply Background Bonus"):
+                if bg_bonus_choice in skills:
+                    skills[bg_bonus_choice] += 1
+                    st.success(f"Added +1 to {bg_bonus_choice}")
+
+    # PDF fields
     fields = {
         "tf_name": name,
         "tf_pa_str": attrs["STR"],
@@ -167,6 +190,22 @@ if st.button("📜 Generate Character Sheet"):
         "tf_drake-coins": coin["coins"] if coin is not None else "",
     }
 
+    # Add skills to PDF
+    fields.update({
+        "tf_talent_arsaidh-technology": skills["Àrsaidh Technology"],
+        "tf_talent_close-combat": skills["Close Combat"],
+        "tf_talent_perception": skills["Perception"],
+        "tf_talent_manipulation": skills["Manipulation"],
+        "tf_talent_medical-aid": skills["Medical Aid"],
+        "tf_talent_pilot": skills["Pilot"],
+        "tf_talent_ranged-combat": skills["Ranged Combat"],
+        "tf_talent_resolve": skills["Resolve"],
+        "tf_talent_science": skills["Science"],
+        "tf_talent_stealth": skills["Stealth"],
+        "tf_talent_survival": skills["Survival"],
+        "tf_talent_technology": skills["Technology"],
+    })
+
     for cat, val in mannerism_options.items():
         if "confident" in cat.lower():
             fields["tf_traits_confident"] = val
@@ -182,9 +221,11 @@ if st.button("📜 Generate Character Sheet"):
     output = BytesIO()
     reader = PdfReader("Blank Character Sheet with fields.pdf")
     writer = PdfWriter()
+
     for page in reader.pages:
         writer.add_page(page)
-    writer.update_page_form_field_values(writer.pages[0], fields)
+        writer.update_page_form_field_values(page, fields)
+
     writer.write(output)
     output.seek(0)
 
@@ -194,5 +235,3 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
-
-
