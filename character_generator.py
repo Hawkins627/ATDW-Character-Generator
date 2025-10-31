@@ -8,7 +8,22 @@ from io import BytesIO
 # ---------- CONFIG ----------
 st.set_page_config(page_title="Across a Thousand Dead Worlds – Character Creator", layout="wide")
 
-# ---------- HELPER FUNCTIONS ----------
+# ---------- SESSION DEFAULTS ----------
+def sget(key, default=None):
+    if key not in st.session_state:
+        st.session_state[key] = default
+    return st.session_state[key]
+
+sget("rolled_background", None)
+sget("rolled_life_event", None)
+sget("rolled_earn_place", None)
+sget("rolled_tic", None)
+sget("rolled_coins", None)
+sget("bg_bonus_opts", None)         # tuple (opt1, opt2)
+sget("bg_bonus_choice", None)       # string of the chosen skill
+sget("bg_bonus_applied", False)     # True if user applied the +1 bonus
+
+# ---------- HELPERS ----------
 def load_csv(name):
     try:
         return pd.read_csv(name)
@@ -17,9 +32,35 @@ def load_csv(name):
         return pd.DataFrame()
 
 def random_row(df):
-    if len(df) == 0:
+    if df is None or len(df) == 0:
         return None
     return df.sample(1).iloc[0]
+
+def parse_background_bonus(text):
+    """
+    Parse 'Choose: +1 X or +1 Y' from background text.
+    Returns (opt1, opt2) or None.
+    """
+    if not isinstance(text, str):
+        return None
+    m = re.search(r"Choose:\s*\+1\s*(.*?)\s*or\s*\+1\s*(.*?)(?:\.|$)", text)
+    if not m:
+        return None
+    return (m.group(1).strip(), m.group(2).strip())
+
+def add_need_appearances(writer: PdfWriter):
+    """
+    Some viewers hide filled values unless NeedAppearances is set.
+    """
+    try:
+        # PyPDF2 >= 3 sets acroform via writer._root_object automatically when updating fields
+        # We try to force NeedAppearances when possible.
+        if writer._root_object.get("/AcroForm") is not None:
+            writer._root_object["/AcroForm"].update({"/NeedAppearances": True})
+        else:
+            writer._root_object.update({"/AcroForm": {"/NeedAppearances": True}})
+    except Exception:
+        pass
 
 # ---------- LOAD DATA ----------
 backgrounds = load_csv("backgrounds.csv")
@@ -149,82 +190,136 @@ if not mannerisms.empty:
 else:
     st.warning("No mannerisms.csv found.")
 
-# ---------- PDF GENERATION ----------
-st.header("Step 5: Generate Character Sheet")
+# ---------- STEP 5A: BACKGROUND & BONUS (PERSISTENT) ----------
+st.header("Step 5: Background & Random Details")
+
+colA, colB = st.columns([1,2])
+
+with colA:
+    if st.button("🎲 Roll Background / Details"):
+        bg = random_row(backgrounds)
+        le = random_row(life_events)
+        ep = random_row(earn_place)
+        tic = random_row(tics)
+        coin = random_row(coins)
+
+        st.session_state.rolled_background = bg
+        st.session_state.rolled_life_event = le
+        st.session_state.rolled_earn_place = ep
+        st.session_state.rolled_tic = tic
+        st.session_state.rolled_coins = coin
+
+        # reset bonus choice state each new background roll
+        st.session_state.bg_bonus_applied = False
+        st.session_state.bg_bonus_choice = None
+        st.session_state.bg_bonus_opts = parse_background_bonus(bg["background"] if bg is not None else "")
+
+with colB:
+    bg = st.session_state.rolled_background
+    if bg is not None:
+        st.markdown(f"**Background:** {bg['background']}")
+    le = st.session_state.rolled_life_event
+    if le is not None:
+        st.markdown(f"**Life-Changing Event:** {le['life_event']}")
+    ep = st.session_state.rolled_earn_place
+    if ep is not None:
+        st.markdown(f"**Earned Place:** {ep['earn_place']}")
+    tic = st.session_state.rolled_tic
+    if tic is not None:
+        st.markdown(f"**Nervous Tic:** {tic['tic']}")
+    coin = st.session_state.rolled_coins
+    if coin is not None:
+        st.markdown(f"**Starting Coins:** {coin['coins']}")
+
+# background bonus UI (persisted outside of generate)
+if st.session_state.bg_bonus_opts is not None:
+    opt1, opt2 = st.session_state.bg_bonus_opts
+    st.markdown(f"**Background Skill Choice:** You may add +1 to either `{opt1}` or `{opt2}` (free, does not count against 70).")
+    st.session_state.bg_bonus_choice = st.radio("Select your +1 Skill Bonus", [opt1, opt2], index=0 if st.session_state.bg_bonus_choice is None else [opt1, opt2].index(st.session_state.bg_bonus_choice))
+    if st.button("✅ Apply Background Bonus"):
+        st.session_state.bg_bonus_applied = True
+        st.success(f"Background bonus ready: +1 to **{st.session_state.bg_bonus_choice}** will be applied on the PDF output.")
+
+# ---------- STEP 6: GENERATE PDF ----------
+st.header("Step 6: Generate Character Sheet")
+
+def skill_with_bonus(skill_name, base_value):
+    """Return base_value plus background +1 if applied/selected for this skill."""
+    if st.session_state.bg_bonus_applied and st.session_state.bg_bonus_choice == skill_name:
+        return base_value + 1
+    return base_value
 
 if st.button("📜 Generate Character Sheet"):
-    bg = random_row(backgrounds)
-    le = random_row(life_events)
-    ep = random_row(earn_place)
-    tic = random_row(tics)
-    coin = random_row(coins)
+    # If the GM wanted 'skip to generate', make sure we have rolls. If not rolled yet, roll now.
+    if st.session_state.rolled_background is None:
+        st.session_state.rolled_background = random_row(backgrounds)
+        st.session_state.bg_bonus_opts = parse_background_bonus(st.session_state.rolled_background["background"] if st.session_state.rolled_background is not None else "")
+    if st.session_state.rolled_life_event is None:
+        st.session_state.rolled_life_event = random_row(life_events)
+    if st.session_state.rolled_earn_place is None:
+        st.session_state.rolled_earn_place = random_row(earn_place)
+    if st.session_state.rolled_tic is None:
+        st.session_state.rolled_tic = random_row(tics)
+    if st.session_state.rolled_coins is None:
+        st.session_state.rolled_coins = random_row(coins)
 
-    # Background Skill Choice (auto-detect from text)
-    bg_bonus_choice = None
-    if bg is not None and "Choose:" in bg["background"]:
-        match = re.search(r"Choose:\s*\+1\s*(.*?)\s*or\s*\+1\s*(.*?)(?:\.|$)", bg["background"])
-        if match:
-            option1, option2 = match.groups()
-            st.markdown(f"**Background Skill Choice:** You may add +1 to either `{option1}` or `{option2}`.")
-            bg_bonus_choice = st.radio("Select your +1 Skill Bonus", [option1.strip(), option2.strip()])
-            if st.button("Apply Background Bonus"):
-                if bg_bonus_choice in skills:
-                    skills[bg_bonus_choice] += 1
-                    st.success(f"Added +1 to {bg_bonus_choice}")
+    # If a background has a choice but the user did not click Apply, default to the first option silently
+    if (st.session_state.bg_bonus_opts is not None) and (not st.session_state.bg_bonus_applied):
+        st.session_state.bg_bonus_choice = st.session_state.bg_bonus_opts[0]
+        st.session_state.bg_bonus_applied = True
 
-    # PDF fields
+    bg = st.session_state.rolled_background
+    le = st.session_state.rolled_life_event
+    ep = st.session_state.rolled_earn_place
+    tic = st.session_state.rolled_tic
+    coin = st.session_state.rolled_coins
+
+    # PDF fields (cast to str for safety)
     fields = {
-        "tf_name": name,
-        "tf_pa_str": attrs["STR"],
-        "tf_pa_dex": attrs["DEX"],
-        "tf_pa_con": attrs["CON"],
-        "tf_pa_wil": attrs["WIL"],
-        "tf_pa_int": attrs["INT"],
-        "tf_pa_cha": attrs["CHA"],
-        "tf_personality_drive": drive_name,
-        "tf_talents-1": chosen_talent,
-        "tf_personality_background": bg["background"] if bg is not None else "",
-        "tf_personality_life-changing-event": le["life_event"] if le is not None else "",
-        "tf_personality_earn-place": ep["earn_place"] if ep is not None else "",
-        "tf_nervous-tic": tic["tic"] if tic is not None else "",
-        "tf_drake-coins": coin["coins"] if coin is not None else "",
+        "tf_name": str(name or ""),
+        "tf_pa_str": str(attrs["STR"]),
+        "tf_pa_dex": str(attrs["DEX"]),
+        "tf_pa_con": str(attrs["CON"]),
+        "tf_pa_wil": str(attrs["WIL"]),
+        "tf_pa_int": str(attrs["INT"]),
+        "tf_pa_cha": str(attrs["CHA"]),
+        "tf_personality_drive": str(drive_name or ""),
+        "tf_talents-1": str(chosen_talent or ""),
+        "tf_personality_background": str(bg["background"]) if bg is not None else "",
+        "tf_personality_life-changing-event": str(le["life_event"]) if le is not None else "",
+        "tf_personality_earn-place": str(ep["earn_place"]) if ep is not None else "",
+        "tf_nervous-tic": str(tic["tic"]) if tic is not None else "",
+        "tf_drake-coins": str(coin["coins"]) if coin is not None else "",
     }
 
-    # Add skills to PDF
+    # Add skills to PDF, including background +1 if applied
     fields.update({
-        "tf_talent_arsaidh-technology": skills["Àrsaidh Technology"],
-        "tf_talent_close-combat": skills["Close Combat"],
-        "tf_talent_perception": skills["Perception"],
-        "tf_talent_manipulation": skills["Manipulation"],
-        "tf_talent_medical-aid": skills["Medical Aid"],
-        "tf_talent_pilot": skills["Pilot"],
-        "tf_talent_ranged-combat": skills["Ranged Combat"],
-        "tf_talent_resolve": skills["Resolve"],
-        "tf_talent_science": skills["Science"],
-        "tf_talent_stealth": skills["Stealth"],
-        "tf_talent_survival": skills["Survival"],
-        "tf_talent_technology": skills["Technology"],
+        "tf_talent_arsaidh-technology": str(skill_with_bonus("Àrsaidh Technology", skills["Àrsaidh Technology"])),
+        "tf_talent_close-combat": str(skill_with_bonus("Close Combat", skills["Close Combat"])),
+        "tf_talent_perception": str(skill_with_bonus("Perception", skills["Perception"])),
+        "tf_talent_manipulation": str(skill_with_bonus("Manipulation", skills["Manipulation"])),
+        "tf_talent_medical-aid": str(skill_with_bonus("Medical Aid", skills["Medical Aid"])),
+        "tf_talent_pilot": str(skill_with_bonus("Pilot", skills["Pilot"])),
+        "tf_talent_ranged-combat": str(skill_with_bonus("Ranged Combat", skills["Ranged Combat"])),
+        "tf_talent_resolve": str(skill_with_bonus("Resolve", skills["Resolve"])),
+        "tf_talent_science": str(skill_with_bonus("Science", skills["Science"])),
+        "tf_talent_stealth": str(skill_with_bonus("Stealth", skills["Stealth"])),
+        "tf_talent_survival": str(skill_with_bonus("Survival", skills["Survival"])),
+        "tf_talent_technology": str(skill_with_bonus("Technology", skills["Technology"])),
     })
 
-    for cat, val in mannerism_options.items():
-        if "confident" in cat.lower():
-            fields["tf_traits_confident"] = val
-        elif "shy" in cat.lower():
-            fields["tf_traits_shy"] = val
-        elif "bored" in cat.lower():
-            fields["tf_traits_bored"] = val
-        elif "happy" in cat.lower():
-            fields["tf_traits_happy"] = val
-        elif "frustrated" in cat.lower():
-            fields["tf_traits_frustrated"] = val
-
+    # Build PDF in memory and update ALL pages
     output = BytesIO()
     reader = PdfReader("Blank Character Sheet with fields.pdf")
     writer = PdfWriter()
 
     for page in reader.pages:
         writer.add_page(page)
+        # update every page with same fields (only those present on that page will apply)
         writer.update_page_form_field_values(page, fields)
+
+    # Try to force field appearances so values show in viewers
+    add_need_appearances(writer)
 
     writer.write(output)
     output.seek(0)
