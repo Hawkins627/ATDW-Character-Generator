@@ -48,19 +48,22 @@ def parse_background_bonus(text):
         return None
     return (m.group(1).strip(), m.group(2).strip())
 
+from PyPDF2.generic import DictionaryObject, NameObject, BooleanObject
+
 def add_need_appearances(writer: PdfWriter):
     """
-    Some viewers hide filled values unless NeedAppearances is set.
+    Some PDF viewers hide filled form values unless NeedAppearances is set.
+    This safer version uses proper PyPDF2 objects.
     """
     try:
-        # PyPDF2 >= 3 sets acroform via writer._root_object automatically when updating fields
-        # We try to force NeedAppearances when possible.
-        if writer._root_object.get("/AcroForm") is not None:
-            writer._root_object["/AcroForm"].update({"/NeedAppearances": True})
-        else:
-            writer._root_object.update({"/AcroForm": {"/NeedAppearances": True}})
-    except Exception:
-        pass
+        catalog = writer._root_object
+        # Ensure /AcroForm exists
+        if "/AcroForm" not in catalog:
+            catalog[NameObject("/AcroForm")] = writer._add_object(DictionaryObject())
+        # Set /NeedAppearances to true
+        writer._root_object["/AcroForm"][NameObject("/NeedAppearances")] = BooleanObject(True)
+    except Exception as e:
+        print("⚠️ Could not set NeedAppearances:", e)
 
 # ---------- LOAD DATA ----------
 backgrounds = load_csv("backgrounds.csv")
@@ -330,3 +333,4 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
+
