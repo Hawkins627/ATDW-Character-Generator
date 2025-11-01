@@ -316,7 +316,7 @@ if st.button("📜 Generate Character Sheet"):
     })
 
     # Build PDF in memory and update ALL pages
-     output = BytesIO()
+    output = BytesIO()
     reader = PdfReader("Blank Character Sheet with fields.pdf")
     writer = PdfWriter()
 
