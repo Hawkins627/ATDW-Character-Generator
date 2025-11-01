@@ -316,34 +316,40 @@ if st.button("📜 Generate Character Sheet"):
     })
 
     # Build PDF in memory and update ALL pages
-    output = BytesIO()
+     output = BytesIO()
     reader = PdfReader("Blank Character Sheet with fields.pdf")
     writer = PdfWriter()
 
+    # Copy all pages
     for page in reader.pages:
         writer.add_page(page)
-        # update every page with same fields (only those present on that page will apply)
+
+    # 🔧 Clone the original AcroForm dictionary from the template
+    if "/AcroForm" in reader.trailer["/Root"]:
+        writer._root_object.update({
+            NameObject("/AcroForm"): reader.trailer["/Root"]["/AcroForm"]
+        })
+
+    # Update all fields on every page
+    for page in writer.pages:
         writer.update_page_form_field_values(page, fields)
 
-    # Try to force field appearances so values show in viewers
+    # Make sure fields display
     add_need_appearances(writer)
 
-    # Ensure form fields dictionary is included in the final PDF
-    writer._root_object.update({
-        NameObject("/AcroForm"): writer._add_object(DictionaryObject({
-            NameObject("/NeedAppearances"): BooleanObject(True)
-        }))
-    })
-    
+    # Write to memory
     writer.write(output)
     output.seek(0)
 
+    # Offer download
     st.download_button(
         label="⬇️ Download Character Sheet",
         data=output,
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
+
+    st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
 
 
 
