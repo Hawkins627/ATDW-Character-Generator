@@ -290,11 +290,12 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_wil": str(attrs["WIL"]),
         "tf_pa_int": str(attrs["INT"]),
         "tf_pa_cha": str(attrs["CHA"]),
-        "tf_personality_drive": str(drive_name or ""),
+        "tf_background": str(bg["background"].split(" - ")[0]) if bg is not None else "",  # Only title, not the small descriptive text
+        "tf_earn-place": str(ep["earn_place"]) if ep is not None else "",
+        "tf_life-changing-event": str(le["life_event"]) if le is not None else "",
+        "tf_drive": str(drive_name or ""),
+        "tf_personality": "",  # intentionally blank
         "tf_talents-1": str(chosen_talent or ""),
-        "tf_personality_background": str(bg["background"]) if bg is not None else "",
-        "tf_personality_life-changing-event": str(le["life_event"]) if le is not None else "",
-        "tf_personality_earn-place": str(ep["earn_place"]) if ep is not None else "",
         "tf_nervous-tic": str(tic["tic"]) if tic is not None else "",
         "tf_drake-coins": str(coin["coins"]) if coin is not None else "",
     }
@@ -315,6 +316,19 @@ if st.button("📜 Generate Character Sheet"):
         "tf_talent_technology": str(skill_with_bonus("Technology", skills["Technology"])),
     })
 
+        # --- Mannerisms ---
+    for cat, val in mannerism_options.items():
+        if "confident" in cat.lower():
+            fields["tf_traits_confident"] = str(val)
+        elif "shy" in cat.lower():
+            fields["tf_traits_shy"] = str(val)
+        elif "bored" in cat.lower():
+            fields["tf_traits_bored"] = str(val)
+        elif "happy" in cat.lower():
+            fields["tf_traits_happy"] = str(val)
+        elif "frustrated" in cat.lower():
+            fields["tf_traits_frustrated"] = str(val)
+    
     # Build PDF in memory and update ALL pages
     output = BytesIO()
     reader = PdfReader("Blank Character Sheet with fields.pdf")
@@ -350,6 +364,7 @@ if st.button("📜 Generate Character Sheet"):
     )
 
     st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
+
 
 
 
