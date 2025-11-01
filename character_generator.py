@@ -328,6 +328,13 @@ if st.button("📜 Generate Character Sheet"):
     # Try to force field appearances so values show in viewers
     add_need_appearances(writer)
 
+    # Ensure form fields dictionary is included in the final PDF
+    writer._root_object.update({
+        NameObject("/AcroForm"): writer._add_object(DictionaryObject({
+            NameObject("/NeedAppearances"): BooleanObject(True)
+        }))
+    })
+    
     writer.write(output)
     output.seek(0)
 
@@ -337,5 +344,6 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
+
 
 
