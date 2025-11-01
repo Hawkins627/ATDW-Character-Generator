@@ -3,7 +3,7 @@ from PyPDF2 import PdfReader
 
 st.set_page_config(page_title="ATDW PDF Field Inspector", layout="wide")
 
-st.title("🕵️ Across a Thousand Dead Worlds – PDF Field Inspector")
+st.title("🕵️ Across a Thousand Dead Worlds – PDF Field Inspector (Full List)")
 
 pdf_path = "Blank Character Sheet with fields.pdf"
 
@@ -12,10 +12,22 @@ try:
     fields = reader.get_fields()
 
     if fields:
-        st.success(f"✅ Found {len(fields)} form fields in '{pdf_path}'")
         field_names = sorted(fields.keys())
-        st.write("### Field Names Found:")
-        st.dataframe({"Field Name": field_names})
+        st.success(f"✅ Found {len(field_names)} form fields in '{pdf_path}'")
+
+        # Display all field names in one scrollable text box
+        st.text_area(
+            "All PDF Field Names:",
+            value="\n".join(field_names),
+            height=600
+        )
+
+        # Optional filter
+        search = st.text_input("🔍 Filter field names (case-insensitive)")
+        if search:
+            filtered = [f for f in field_names if search.lower() in f.lower()]
+            st.write(f"### Matching Fields ({len(filtered)})")
+            st.write(filtered)
     else:
         st.warning("⚠️ No form fields found in this PDF.")
 except FileNotFoundError:
