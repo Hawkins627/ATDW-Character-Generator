@@ -245,6 +245,17 @@ def skill_with_bonus(skill_name, base_value):
         return base_value + 1
     return base_value
 
+def extract_background_title(text):
+    """Extract only the background title (before any dash, colon, or description)."""
+    if not isinstance(text, str):
+        return ""
+    # Common separators used in the backgrounds file
+    for sep in [" - ", " — ", "–", ":", "—"]:
+        if sep in text:
+            return text.split(sep)[0].strip()
+    # Fallback: first 5 words max, just in case
+    return " ".join(text.split()[:5]).strip()
+
 if st.button("📜 Generate Character Sheet"):
     # Ensure all rolls exist
     if st.session_state.rolled_background is None:
@@ -280,7 +291,7 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_int": str(attrs["INT"]),
         "tf_pa_cha": str(attrs["CHA"]),
         "tf_personality_background": (
-            str(bg["background"].split(" - ")[0].strip()) if bg is not None and isinstance(bg["background"], str) else ""
+            extract_background_title(bg["background"]) if bg is not None else ""
         ),
         "tf_personality_earn-place": str(ep["earn_place"]) if ep is not None else "",
         "tf_personality_life-changing-event": str(le["life_event"]) if le is not None else "",
@@ -350,4 +361,5 @@ if st.button("📜 Generate Character Sheet"):
     )
 
     st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
+
 
