@@ -291,7 +291,12 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_int": str(attrs["INT"]),
         "tf_pa_cha": str(attrs["CHA"]),
 		"tf_personality_background": "",
-		"tf_personality_earn-place": str(bg["background"].split(" - ")[0]) if bg is not None else "",
+		
+		"tf_personality_earn-place": (
+    		str(bg["background"].split(" - ")[0].strip()) if bg is not None and isinstance(bg["background"], str)
+    		else ""
+		),
+
 		"tf_personality_life-changing-event": str(ep["earn_place"]) if ep is not None else "",
 		"tf_personality_drive": str(le["life_event"]) if le is not None else "",
 		"tf_personality_other-details_1": str(drive_name or ""),
@@ -365,4 +370,5 @@ if st.button("📜 Generate Character Sheet"):
     )
 
     st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
+
 
