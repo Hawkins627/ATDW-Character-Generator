@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import random
 import re
+from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 from PyPDF2.generic import DictionaryObject, NameObject, BooleanObject
-from io import BytesIO
 
-# ---------- CONFIG ----------
+# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Across a Thousand Dead Worlds – Character Creator", layout="wide")
 
-# ---------- SESSION DEFAULTS ----------
+# ---------------- SESSION DEFAULTS ----------------
 def sget(key, default=None):
     if key not in st.session_state:
         st.session_state[key] = default
@@ -20,11 +20,11 @@ sget("rolled_life_event", None)
 sget("rolled_earn_place", None)
 sget("rolled_tic", None)
 sget("rolled_coins", None)
-sget("bg_bonus_opts", None)
-sget("bg_bonus_choice", None)
-sget("bg_bonus_applied", False)
+sget("bg_bonus_opts", None)        # tuple(str,str)
+sget("bg_bonus_choice", None)      # str
+sget("bg_bonus_applied", False)    # bool
 
-# ---------- HELPERS ----------
+# ---------------- HELPERS ----------------
 def load_csv(name):
     try:
         return pd.read_csv(name)
@@ -37,13 +37,25 @@ def random_row(df):
         return None
     return df.sample(1).iloc[0]
 
-def parse_background_bonus(text):
+def parse_background_bonus(text: str):
+    """
+    Find 'Choose: +1 X or +1 Y' and return ('X','Y') or None.
+    """
     if not isinstance(text, str):
         return None
-    m = re.search(r"Choose:\s*\+1\s*(.*?)\s*or\s*\+1\s*(.*?)(?:\.|$)", text)
+    m = re.search(r"Choose:\s*\+1\s*(.*?)\s*or\s*\+1\s*(.*?)(?:[.。]|$)", text)
     if not m:
         return None
     return (m.group(1).strip(), m.group(2).strip())
+
+def extract_background_title(text: str) -> str:
+    """
+    Extract the short title (e.g., 'Algae Farmer') from the full background line.
+    """
+    if not isinstance(text, str):
+        return ""
+    m = re.match(r"^\s*\d*\.?\s*([A-Za-zÀ-ÿ' -]+?)(?:\s*[-:–—]|$)", text)
+    return m.group(1).strip() if m else text.split(" - ")[0].strip()
 
 def add_need_appearances(writer: PdfWriter):
     try:
@@ -54,18 +66,7 @@ def add_need_appearances(writer: PdfWriter):
     except Exception as e:
         print("⚠️ Could not set NeedAppearances:", e)
 
-# Extract clean title from background description
-def extract_background_title(text):
-    if not isinstance(text, str):
-        return ""
-    # Removes numbering (e.g., "1.") and captures text up to punctuation
-    m = re.match(r"^\s*\d*\.*\s*([A-Za-z\s']+?)(?:[.:,-]|\s*$)", text)
-    if m:
-        return m.group(1).strip()
-    # Fallback: first 4 words if no punctuation
-    return " ".join(text.split()[:4]).strip()
-
-# ---------- LOAD DATA ----------
+# ---------------- LOAD DATA ----------------
 backgrounds = load_csv("backgrounds.csv")
 life_events = load_csv("life_events.csv")
 earn_place = load_csv("earn_place.csv")
@@ -75,18 +76,17 @@ talents = load_csv("talents.csv")
 drives = load_csv("drives.csv")
 mannerisms = load_csv("mannerisms.csv")
 
-# ---------- HEADER ----------
+# ---------------- UI ----------------
 st.title("🚀 Across a Thousand Dead Worlds – Character Creator")
 st.markdown("Create your Deep Diver and generate a filled character sheet PDF.")
 
-# ---------- CHARACTER BASICS ----------
+# Basics
 st.header("Step 1: Character Basics")
 name = st.text_input("Character Name")
 
-# ---------- PRIMARY ATTRIBUTES ----------
+# Primary attributes
 st.subheader("Primary Attributes (Rulebook Page 4)")
 st.caption("Distribute 12 points among attributes (max 18).")
-
 attribute_info = {
     "STR": "Strength – lifting, breaking, and raw power.",
     "DEX": "Dexterity – agility, precision, and coordination.",
@@ -95,36 +95,27 @@ attribute_info = {
     "INT": "Intelligence – reasoning, logic, and understanding.",
     "CHA": "Charisma – charm, persuasion, and presence."
 }
+attrs, total_points, max_total = {}, 0, 18
+cols = st.columns(6)
+for i, a in enumerate(attribute_info):
+    with cols[i]:
+        v = st.slider(a, 0, 18, 0, key=f"attr_{a}", help=attribute_info[a])
+        attrs[a] = v
+        total_points += v
+st.info(f"Attribute points used: {total_points}/{max_total}" + ("  ⚠️ OVER!" if total_points>max_total else ""))
 
-attrs = {}
-attr_cols = st.columns(6)
-max_total = 18
-total_points = 0
-
-for i, label in enumerate(attribute_info.keys()):
-    with attr_cols[i]:
-        val = st.slider(label, 0, 18, 0, key=f"attr_{label}", help=attribute_info[label])
-        attrs[label] = val
-        total_points += val
-
-if total_points > max_total:
-    st.error(f"⚠️ Total exceeds {max_total}! Currently: {total_points}")
-else:
-    st.info(f"Attribute points used: {total_points}/{max_total}")
-
-# ---------- SECONDARY ATTRIBUTES ----------
+# Secondary attributes (info)
 with st.expander("📘 Secondary Attributes"):
     st.markdown("""
-**Luck:** Re-rolls and near-death negation (start 3).  
-**Stamina:** Actions per round (start 10).  
-**Stress:** Mental strain (start 0).  
-**Wounds:** Physical damage capacity (max 3 before death).
+**Luck:** Start 3. Re-rolls or negate a killing blow (all Luck).  
+**Stamina:** Start 10. Actions per round.  
+**Stress:** Start 0. Mental strain.  
+**Wounds:** Most PCs die at 3 Wounds.
 """)
 
-# ---------- SKILLS ----------
+# Skills
 st.subheader("Skills (Rulebook Pages 6–7)")
-st.caption("Distribute 70 points among skills (max 10 per skill).")
-
+st.caption("Distribute 70 points among skills (max 10 per skill). Àrsaidh Technology starts at **-5**.")
 skills_info = {
     "Àrsaidh Technology": "Hacking and comprehension of Àrsaidh systems. Starts at -5.",
     "Close Combat": "Melee fighting with knives, clubs, or wrenches.",
@@ -139,33 +130,25 @@ skills_info = {
     "Survival": "Enduring and navigating hostile environments.",
     "Technology": "Repairing and operating machinery or computers."
 }
-
-skills = {}
-total_skill_points = 0
-skill_cols = st.columns(3)
-
-for i, (skill, desc) in enumerate(skills_info.items()):
-    with skill_cols[i % 3]:
-        if skill == "Àrsaidh Technology":
-            val = st.slider(skill, -5, 10, -5, key=f"skill_{skill}", help=desc)
+skills, total_skill_points = {}, 0
+scols = st.columns(3)
+for i, (sk, desc) in enumerate(skills_info.items()):
+    with scols[i % 3]:
+        if sk == "Àrsaidh Technology":
+            val = st.slider(sk, -5, 10, -5, key=f"skill_{sk}", help=desc)
             cost = val + 5
         else:
-            val = st.slider(skill, 0, 10, 0, key=f"skill_{skill}", help=desc)
+            val = st.slider(sk, 0, 10, 0, key=f"skill_{sk}", help=desc)
             cost = val
-        skills[skill] = val
+        skills[sk] = val
         total_skill_points += cost
+st.info(f"Skill points used: {total_skill_points}/70" + ("  ⚠️ OVER!" if total_skill_points>70 else ""))
 
-if total_skill_points > 70:
-    st.error(f"⚠️ Total exceeds 70! Currently: {total_skill_points}")
-else:
-    st.info(f"Skill points used: {total_skill_points}/70")
-
-# ---------- TALENT ----------
+# Talent
 st.header("Step 2: Talent")
-if len(talents) > 0:
+if not talents.empty:
     chosen_talent = st.selectbox("Choose your first Talent", talents["talent_name"].unique())
-    desc = talents.loc[talents["talent_name"] == chosen_talent, "talent_description"].iloc[0]
-    st.write(f"🧠 **Description:** {desc}")
+    st.write("🧠 **Description:**", talents.loc[talents["talent_name"]==chosen_talent, "talent_description"].iloc[0])
 else:
     chosen_talent = ""
     st.warning("No talents.csv found.")
@@ -175,31 +158,28 @@ if st.button("🎲 Roll Random Talent"):
     if t is not None:
         st.success(f"Random Talent: **{t['talent_name']}** – {t['talent_description']}")
 
-# ---------- DRIVE ----------
+# Drive
 st.header("Step 3: Choose a Drive")
-if len(drives) > 0:
+if not drives.empty:
     drive_name = st.selectbox("Drive", drives["drive_name"].tolist())
-    desc = drives.loc[drives["drive_name"] == drive_name, "drive_description"].values[0]
-    st.write(f"💡 **Drive Description:** {desc}")
+    st.write("💡 **Drive Description:**", drives.loc[drives["drive_name"]==drive_name, "drive_description"].values[0])
 else:
     drive_name = ""
 
-# ---------- MANNERISMS ----------
+# Mannerisms
 st.header("Step 4: Mannerisms")
 mannerism_options = {}
 if not mannerisms.empty:
-    categories = mannerisms["category"].unique()
-    for cat in categories:
-        opts = mannerisms.loc[mannerisms["category"] == cat, "option"].tolist()
+    for cat in mannerisms["category"].unique():
+        opts = mannerisms.loc[mannerisms["category"]==cat, "option"].tolist()
         mannerism_options[cat] = st.selectbox(f"When you are {cat.lower()}:", opts)
 else:
     st.warning("No mannerisms.csv found.")
 
-# ---------- STEP 5A: BACKGROUND & BONUS ----------
+# Background & random details (+1 choice lives here)
 st.header("Step 5: Background & Random Details")
-
-colA, colB = st.columns([1, 2])
-with colA:
+c1, c2 = st.columns([1,2])
+with c1:
     if st.button("🎲 Roll Background / Details"):
         bg = random_row(backgrounds)
         le = random_row(life_events)
@@ -211,42 +191,64 @@ with colA:
         st.session_state.rolled_earn_place = ep
         st.session_state.rolled_tic = tic
         st.session_state.rolled_coins = coin
+        # reset background +1 state
         st.session_state.bg_bonus_applied = False
         st.session_state.bg_bonus_choice = None
         st.session_state.bg_bonus_opts = parse_background_bonus(bg["background"] if bg is not None else "")
 
-with colB:
+with c2:
     bg = st.session_state.rolled_background
+    le = st.session_state.rolled_life_event
+    ep = st.session_state.rolled_earn_place
+    tic = st.session_state.rolled_tic
+    coin = st.session_state.rolled_coins
+
     if bg is not None:
         st.markdown(f"**Background:** {bg['background']}")
-    le = st.session_state.rolled_life_event
     if le is not None:
         st.markdown(f"**Life-Changing Event:** {le['life_event']}")
-    ep = st.session_state.rolled_earn_place
     if ep is not None:
         st.markdown(f"**Earned Place:** {ep['earn_place']}")
-    tic = st.session_state.rolled_tic
     if tic is not None:
         st.markdown(f"**Nervous Tic:** {tic['tic']}")
-    coin = st.session_state.rolled_coins
     if coin is not None:
         st.markdown(f"**Starting Coins:** {coin['coins']}")
 
-# ---------- GENERATE PDF ----------
+# >>> Background +1 skill choice UI (re-added) <<<
+if st.session_state.bg_bonus_opts:
+    opt1, opt2 = st.session_state.bg_bonus_opts
+    st.info(f"Background bonus: **Choose +1** to either **{opt1}** or **{opt2}** (free, does not count toward the 70 skill points).")
+    # Keep previously chosen radio selection if any
+    current_idx = 0
+    if st.session_state.bg_bonus_choice in (opt1, opt2):
+        current_idx = [opt1, opt2].index(st.session_state.bg_bonus_choice)
+    selection = st.radio("Select your +1 skill bonus", [opt1, opt2], index=current_idx, horizontal=True)
+    st.session_state.bg_bonus_choice = selection
+    if st.button("✅ Apply Background Bonus"):
+        st.session_state.bg_bonus_applied = True
+        st.success(f"Background bonus queued: **+1 {selection}** (will appear on the PDF).")
+
+# ---------------- GENERATE PDF ----------------
 st.header("Step 6: Generate Character Sheet")
 
-def skill_with_bonus(skill_name, base_value):
+def skill_with_bonus(skill_name: str, base_value: int) -> int:
     if st.session_state.bg_bonus_applied and st.session_state.bg_bonus_choice == skill_name:
         return base_value + 1
     return base_value
 
 if st.button("📜 Generate Character Sheet"):
+    # If user never clicked Apply, default to the first option silently
+    if (st.session_state.bg_bonus_opts is not None) and (not st.session_state.bg_bonus_applied):
+        st.session_state.bg_bonus_choice = st.session_state.bg_bonus_opts[0]
+        st.session_state.bg_bonus_applied = True
+
     bg = st.session_state.rolled_background
     le = st.session_state.rolled_life_event
     ep = st.session_state.rolled_earn_place
     tic = st.session_state.rolled_tic
     coin = st.session_state.rolled_coins
 
+    # Build the fields dictionary
     fields = {
         "tf_name": str(name or ""),
         "tf_pa_str": str(attrs["STR"]),
@@ -255,6 +257,7 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_wil": str(attrs["WIL"]),
         "tf_pa_int": str(attrs["INT"]),
         "tf_pa_cha": str(attrs["CHA"]),
+        # Personality block mapping (title only for background)
         "tf_personality_background": str(extract_background_title(bg["background"])) if bg is not None else "",
         "tf_personality_earn-place": str(ep["earn_place"]) if ep is not None else "",
         "tf_personality_life-changing-event": str(le["life_event"]) if le is not None else "",
@@ -264,24 +267,30 @@ if st.button("📜 Generate Character Sheet"):
         "tf_drake-coins": str(coin["coins"]) if coin is not None else "",
     }
 
-    # Add skills
+    # Explicit skill field names to avoid any mismatch
     fields.update({
-        f"tf_talent_{key.lower().replace(' ', '-')}": str(skill_with_bonus(skill, val))
-        for skill, val in skills.items()
+        "tf_talent_arsaidh-technology": str(skill_with_bonus("Àrsaidh Technology", skills["Àrsaidh Technology"])),
+        "tf_talent_close-combat":     str(skill_with_bonus("Close Combat",      skills["Close Combat"])),
+        "tf_talent_manipulation":     str(skill_with_bonus("Manipulation",      skills["Manipulation"])),
+        "tf_talent_medical-aid":      str(skill_with_bonus("Medical Aid",       skills["Medical Aid"])),
+        "tf_talent_perception":       str(skill_with_bonus("Perception",        skills["Perception"])),
+        "tf_talent_pilot":            str(skill_with_bonus("Pilot",             skills["Pilot"])),
+        "tf_talent_ranged-combat":    str(skill_with_bonus("Ranged Combat",     skills["Ranged Combat"])),
+        "tf_talent_resolve":          str(skill_with_bonus("Resolve",           skills["Resolve"])),
+        "tf_talent_science":          str(skill_with_bonus("Science",           skills["Science"])),
+        "tf_talent_stealth":          str(skill_with_bonus("Stealth",           skills["Stealth"])),
+        "tf_talent_survival":         str(skill_with_bonus("Survival",          skills["Survival"])),
+        "tf_talent_technology":       str(skill_with_bonus("Technology",        skills["Technology"])),
     })
 
     # Add mannerisms
     for cat, val in mannerism_options.items():
-        if "confident" in cat.lower():
-            fields["tf_traits_confident"] = str(val)
-        elif "shy" in cat.lower():
-            fields["tf_traits_shy"] = str(val)
-        elif "bored" in cat.lower():
-            fields["tf_traits_bored"] = str(val)
-        elif "happy" in cat.lower():
-            fields["tf_traits_happy"] = str(val)
-        elif "frustrated" in cat.lower():
-            fields["tf_traits_frustrated"] = str(val)
+        low = cat.lower()
+        if "confident" in low:   fields["tf_traits_confident"]   = str(val)
+        if "shy" in low:         fields["tf_traits_shy"]         = str(val)
+        if "bored" in low:       fields["tf_traits_bored"]       = str(val)
+        if "happy" in low:       fields["tf_traits_happy"]       = str(val)
+        if "frustrated" in low:  fields["tf_traits_frustrated"]  = str(val)
 
     # Write PDF
     output = BytesIO()
@@ -300,5 +309,4 @@ if st.button("📜 Generate Character Sheet"):
         file_name=f"{name or 'Character'}_Sheet.pdf",
         mime="application/pdf"
     )
-
     st.success("✅ Character sheet generated successfully!")
