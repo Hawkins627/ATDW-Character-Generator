@@ -292,10 +292,22 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_cha": str(attrs["CHA"]),
 		"tf_personality_background": "",
 		
-		"tf_personality_earn-place": (
-    		str(bg["background"].split(" - ")[0].strip()) if bg is not None and isinstance(bg["background"], str)
-    		else ""
-		),
+import re  # (make sure this is already imported at top; you have it, but no harm leaving it)
+
+# Extract just the title from the background text (even if format varies)
+def extract_background_title(text):
+    if not isinstance(text, str):
+        return ""
+    # Match up to first period or newline, removing numbering like "1. " if present
+    m = re.match(r"^\s*\d*\.*\s*([A-Za-z\s]+?)(?:[.:,-]|\s*$)", text)
+    if m:
+        return m.group(1).strip()
+    # Fallback: split by newline or take first 6 words if no punctuation
+    return " ".join(text.split()[:6]).strip()
+
+"tf_personality_earn-place": (
+    extract_background_title(bg["background"]) if bg is not None else ""
+),
 
 		"tf_personality_life-changing-event": str(ep["earn_place"]) if ep is not None else "",
 		"tf_personality_drive": str(le["life_event"]) if le is not None else "",
@@ -370,5 +382,6 @@ if st.button("📜 Generate Character Sheet"):
     )
 
     st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
+
 
 
