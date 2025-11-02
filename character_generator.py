@@ -257,6 +257,17 @@ def skill_with_bonus(skill_name, base_value):
     return base_value
 
 if st.button("📜 Generate Character Sheet"):
+# --- Helper: extract background title cleanly for PDF ---
+def extract_background_title(text):
+    if not isinstance(text, str):
+        return ""
+    # Match up to first period, colon, dash, or newline, removing numbering like "1. "
+    m = re.match(r"^\s*\d*\.*\s*([A-Za-z\s]+?)(?:[.:,-]|\s*$)", text)
+    if m:
+        return m.group(1).strip()
+    # Fallback: take first 6 words if nothing else matches
+    return " ".join(text.split()[:6]).strip()
+	
     # If the GM wanted 'skip to generate', make sure we have rolls. If not rolled yet, roll now.
     if st.session_state.rolled_background is None:
         st.session_state.rolled_background = random_row(backgrounds)
@@ -292,20 +303,10 @@ if st.button("📜 Generate Character Sheet"):
         "tf_pa_cha": str(attrs["CHA"]),
 		"tf_personality_background": "",
 		
-# Extract just the title from the background text (even if format varies)
-def extract_background_title(text):
-    if not isinstance(text, str):
-        return ""
-    # Match up to first period, colon, dash, or newline, removing numbering like "1. "
-    m = re.match(r"^\s*\d*\.*\s*([A-Za-z\s]+?)(?:[.:,-]|\s*$)", text)
-    if m:
-        return m.group(1).strip()
-    # Fallback: take first 6 words if nothing else matches
-    return " ".join(text.split()[:6]).strip()
-
 "tf_personality_earn-place": (
     extract_background_title(bg["background"]) if bg is not None else ""
 ),
+
 
 		"tf_personality_life-changing-event": str(ep["earn_place"]) if ep is not None else "",
 		"tf_personality_drive": str(le["life_event"]) if le is not None else "",
@@ -380,6 +381,7 @@ def extract_background_title(text):
     )
 
     st.success("✅ Character sheet generated successfully! Open the downloaded PDF to see all fields filled in.")
+
 
 
 
